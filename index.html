@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sistem Informasi Apel Pegawai - SBB</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <style>
+        :root { --primary: #2c3e50; --success: #27ae60; --danger: #e74c3c; --warning: #f39c12; --bg: #f4f7f9; --info: #3498db; }
+        body { font-family: 'Segoe UI', Roboto, sans-serif; margin: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+
+        #report-area { 
+            width: 100%; 
+            max-width: 480px; 
+            background: white; 
+            display: flex; 
+            flex-direction: column; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header-kop { display: flex; align-items: center; padding: 12px 15px; background: white; border-bottom: 3px solid #000; gap: 12px; }
+        .logo-kab { width: 40px; height: auto; object-fit: contain; }
+        .opd-info b { font-size: 13px; color: #111; display: block; text-transform: uppercase; line-height: 1.2; }
+        .opd-info span { font-size: 9px; color: #444; font-weight: bold; }
+
+        #photo-container { position: relative; width: 100%; background: #000; line-height: 0; overflow: hidden; aspect-ratio: 4/3; border-bottom: 2px solid #eee; }
+        
+        video { position: absolute; width: 100%; height: 100%; object-fit: cover; opacity: 0; pointer-events: none; }
+        #snapshot-canvas { display: block; width: 100%; height: 100%; object-fit: cover; }
+        
+        .mirror { transform: scaleX(-1); }
+        
+        canvas#overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; }
+
+        .cam-ui { position: absolute; z-index: 10; transition: opacity 0.2s; }
+        .cam-controls {
+            bottom: 8px; left: 8px; right: 8px;
+            display: flex; flex-direction: column; gap: 5px; background: rgba(0,0,0,0.6);
+            padding: 10px; border-radius: 8px;
+        }
+        .cam-row { display: flex; align-items: center; gap: 10px; color: white; font-size: 10px; }
+        .cam-row input { flex: 1; accent-color: var(--success); }
+
+        #switch-btn {
+            top: 10px; right: 10px;
+            background: var(--success); color: white; border: none;
+            padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 10px; font-weight: bold;
+        }
+
+        #capture-btn {
+            position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+            background: rgba(255,255,255,0.8); border: 4px solid var(--success);
+            width: 50px; height: 50px; border-radius: 50%; cursor: pointer; z-index: 15;
+        }
+        #capture-btn:active { background: var(--success); }
+
+        .data-footer { padding: 12px; background: white; display: grid; grid-template-columns: 1fr 1.2fr; gap: 10px; }
+        .footer-section h4 { margin: 0 0 6px 0; font-size: 9px; color: var(--success); border-bottom: 1px solid #eee; padding-bottom: 3px; }
+        .info-text { font-size: 8.5px; color: #333; line-height: 1.4; margin-bottom: 8px; }
+        
+        .perc-display-box { padding: 8px; background: #f9f9f9; border-radius: 6px; text-align: center; border: 1px solid #eee; }
+        .perc-val { font-size: 22px; font-weight: 900; color: var(--success); line-height: 1; }
+
+        .rekap-grid { display: grid; grid-template-columns: 1fr auto; gap: 3px; font-size: 9px; }
+        .status-badge { display: block; padding: 4px; border-radius: 4px; color: white; font-weight: bold; font-size: 8.5px; margin-bottom: 6px; text-align: center; }
+        .status-in { background: var(--success); }
+        .status-out { background: var(--danger); }
+        .locked-val { color: var(--warning) !important; font-weight: 900; }
+
+        .controls { width: 95%; max-width: 480px; margin: 15px 0 30px 0; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); box-sizing: border-box; }
+        input { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        .btn-main { background: var(--success); color: white; border: none; padding: 15px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 5px; }
+        .btn-lock { background: var(--primary); color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; margin-bottom: 8px; }
+        
+        .btn-capture-mode { background: var(--info); margin-bottom: 10px; }
+        
+        label { font-size: 11px; font-weight: bold; color: var(--primary); display: block; margin-bottom: 4px; }
+        .rekap-input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .manual-input-box { background: #fffdf0; padding: 10px; border-radius: 8px; border: 1px solid #f39c12; margin-bottom: 10px; }
+    </style>
+</head>
+<body onload="startApp()">
+
+    <div id="report-area">
+        <div class="header-kop">
+            <img src="img/Kab-sbb.png" class="logo-kab" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/thumb/2/22/Coat_of_arms_of_West_Seram_Regency.svg/1200px-Coat_of_arms_of_West_Seram_Regency.svg.png'">
+            <div class="opd-info">
+                <span>PEMERINTAH KABUPATEN SERAM BAGIAN BARAT</span>
+                <b id="opd-name-top">BKPSDM </b>
+            </div>
+        </div>
+
+        <div id="photo-container">
+            <button id="switch-btn" class="cam-ui" onclick="toggleCamera()">🔄 MODE KAMERA</button>
+            <button id="capture-btn" class="cam-ui" onclick="takeSnapshot()" title="Ambil Foto"></button>
+
+            <div class="cam-controls cam-ui">
+                <div class="cam-row">🔍 Zoom: <input type="range" id="zoom-range" min="1" max="10" step="0.1" value="1" oninput="applyZoom()"></div>
+            </div>
+            <video id="video" autoplay muted playsinline></video>
+            <canvas id="snapshot-canvas"></canvas>
+            <canvas id="overlay"></canvas>
+        </div>
+
+        <div class="data-footer">
+            <div class="footer-section">
+                <h4>WAKTU & LOKASI</h4>
+                <div class="info-text">
+                    📅 <span id="wm-date">-</span><br>
+                    ⏰ <span id="wm-time">-</span><br>
+                    📍 <span id="location-text">GPS...</span><br>
+                    📏 <b id="distance-info">0m</b>
+                </div>
+                <div id="zone-status" class="status-badge status-out">DI LUAR AREA</div>
+                <div class="perc-display-box">
+                    <div class="perc-val" id="perc-display">0%</div>
+                    <div style="font-size: 7px; color: #888;">PERSENTASE HADIR</div>
+                </div>
+            </div>
+            
+            <div class="footer-section">
+                <h4>REKAPITULASI <span id="lock-icon" style="display:none;">🔒</span></h4>
+                <div class="rekap-grid">
+                    <span>Total Pegawai:</span> <b id="out-total">0</b>
+                    <span>Hadir:</span> <b id="out-hadir" style="color:var(--success);">1</b>
+                    <span>PPPK PW Off:</span> <b id="out-pppk">0</b>
+                    <span>Cuti:</span> <b id="out-cuti">0</b>
+                    <span>Izin:</span> <b id="out-izin">0</b>
+                    <span>Sakit:</span> <b id="out-sakit">0</b>
+                    <span>Tugas Dinas:</span> <b id="out-tugas">0</b>
+                    <span>Izin Belajar:</span> <b id="out-belajar">0</b>
+                    <span style="color:var(--danger); font-weight:bold;">Tanpa Ket:</span> <b id="out-alpa" style="color:var(--danger);">0</b>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="btn-retake" class="btn-main btn-capture-mode" onclick="retakePhoto()" style="display:none;">📸 AMBIL ULANG FOTO</button>
+        <button id="btn-lock-toggle" class="btn-lock" onclick="toggleLock()">🔒 KUNCI JUMLAH HADIR</button>
+        <button class="btn-main" id="btn-save" onclick="generateJPG()" disabled style="margin-bottom: 20px;">MENUNGGU SINYAL GPS...</button>
+
+        <label>Nama OPD:</label>
+        <input type="text" id="input-opd" placeholder="Ketik nama OPD..." oninput="handleOPDInput(this)">
+        
+        <label>Total Seluruh Pegawai:</label>
+        <input type="number" id="in-total" placeholder="0" oninput="calculateReport()" style="border: 2px solid var(--success);">
+
+        <div class="manual-input-box">
+            <label style="color: #d35400;">📝 Jumlah Hadir (Manual):</label>
+            <input type="number" id="in-manual-hadir" placeholder="Isi untuk override AI" oninput="calculateReport()">
+        </div>
+
+        <div class="rekap-input-grid">
+            <div><label>PPPK Off:</label><input type="number" id="in-pppk" oninput="calculateReport()"></div>
+            <div><label>Cuti:</label><input type="number" id="in-cuti" oninput="calculateReport()"></div>
+            <div><label>Izin:</label><input type="number" id="in-izin" oninput="calculateReport()"></div>
+            <div><label>Sakit:</label><input type="number" id="in-sakit" oninput="calculateReport()"></div>
+            <div><label>Tugas Dinas:</label><input type="number" id="in-tugas" oninput="calculateReport()"></div>
+            <div><label>Izin Belajar:</label><input type="number" id="in-belajar" oninput="calculateReport()"></div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const snapCanvas = document.getElementById('snapshot-canvas');
+        const btnSave = document.getElementById('btn-save');
+        const btnRetake = document.getElementById('btn-retake');
+        const captureBtn = document.getElementById('capture-btn');
+        
+        let currentStream = null, useFrontCamera = false, isLocked = false, lockedCount = 1;
+        let aiDetectionCount = 0;
+        let detectorOptions = null;
+        let isFrozen = false; 
+        
+        // --- PERBAIKAN KOORDINAT LOKASI OPD SBB ---
+        const opdLocations = {
+            "BKPSDM": { lat: -3.066494, lng: 128.230482 },
+            "BPKAD": { lat: -3.066296, lng: 128.230362 },
+            "BAPPEDA": { lat: -3.066438, lng: 128.230393 },
+            "BADAN PERENCANAAN": { lat: -3.066438, lng: 128.230393 },
+            "KESBANGPOL": { lat: -3.066228, lng: 128.230203 },
+            "BAPENDA": { lat: -3.066049, lng: 128.230491 },
+            "BPBD": { lat: -3.062782, lng: 128.196191 },
+            "UPTD BAPENDA KAIRATU": { lat: -3.331852, lng: 128.346114 },
+            "DISPERINDAG": { lat: -3.082620, lng: 128.208836 },
+            "DPMD": { lat: -3.066583, lng: 128.230326 },
+            "DINAS PERIKANAN": { lat: -3.068514, lng: 128.192310 },
+            "DISDIKBUD": { lat: -3.067505, lng: 128.231565 },
+            "DISPORA": { lat: -3.062498, lng: 128.196950 },
+            "DINAS PERTANIAN": { lat: -3.063420, lng: 128.232440 },
+            "DPMPTSP": { lat: -3.063220, lng: 128.195983 },
+            "DISHUB": { lat: -3.080200, lng: 128.208494 },
+            "PUPR": { lat: -3.341002, lng: 128.371463 },
+            "DP3AP2KB": { lat: -3.063024, lng: 128.196106 },
+            "DISKOPERASI": { lat: -3.063210, lng: 128.195858 },
+            "DISKOMINFO": { lat: -3.083320, lng: 128.209106 },
+            "DINKES": { lat: -3.076548, lng: 128.204564 },
+            "PERUMAHAN": { lat: -3.088338, lng: 128.211592 },
+            "DUKCAPIL": { lat: -3.063330, lng: 128.195763 },
+            "BAGIAN HUKUM": { lat: -3.066332, lng: 128.229957 },
+            "BAGIAN EKONOMI": { lat: -3.066315, lng: 128.230135 },
+            "BAGIAN UMUM,PERENCANAAN DAN KEUANGAN": { lat: -3.066103, lng: 128.230083 },
+            "BAGIAN KESRA": { lat: -3.066302, lng: 128.229972 },
+            "BAGIAN ORGANISASI": { lat: -3.066375, lng: 128.230298 },
+            "BAGIAN PEMERINTAHAN": { lat: -3.066309, lng: 128.230102 },
+            "SEKRETARIAT DPRD": { lat: -3.340720, lng: 128.372879 },
+            "KANTOR CAMAT KAIRATU": { lat: -3.348448, lng: 128.365635 },
+            "DINAS KETAHANAN PANGAN": { lat: -3.067166, lng: 128.231629 },
+            "DINAS PARIWISATA": { lat: -3.076861, lng: 128.199869 },
+            "DINAS SOSIAL": { lat: -3.067142, lng: 128.231484 },
+            "DINAS KEARSIPAN": { lat: -3.077136, lng: 128.205615 },
+            "DINAS LH": { lat: -3.079864, lng: 128.207890 },
+            "KANTOR CAMAT SERAM BARAT": { lat: -3.083355, lng: 128.208429 },
+            "KANTOR CAMAT KAIRATU BARAT": { lat: -3.223152, lng: 128.292299 },
+            "KANTOR CAMAT ELPAPUTIH": { lat: -3.266816, lng: 128.773322 },
+            "DEFAULT": { lat: -3.066494, lng: 128.230482 }
+        };
+
+        let OFFICE_LAT = opdLocations.DEFAULT.lat;
+        let OFFICE_LNG = opdLocations.DEFAULT.lng;
+        const ALLOWED_DISTANCE = 100; // Radius 100 Meter
+
+        function handleOPDInput(el) {
+            const val = el.value.toUpperCase().trim();
+            document.getElementById('opd-name-top').innerText = val || 'BKPSDM';
+            
+            // Mencari kecocokan nama OPD dalam list koordinat
+            let found = false;
+            for (let key in opdLocations) {
+                if (val.includes(key) || key.includes(val)) {
+                    OFFICE_LAT = opdLocations[key].lat;
+                    OFFICE_LNG = opdLocations[key].lng;
+                    found = true;
+                    break;
+                }
+            }
+            if(!found) {
+                OFFICE_LAT = opdLocations.DEFAULT.lat;
+                OFFICE_LNG = opdLocations.DEFAULT.lng;
+            }
+            updateGPSUI();
+        }
+
+        function toggleLock() {
+            isLocked = !isLocked;
+            const btn = document.getElementById('btn-lock-toggle');
+            const display = document.getElementById('out-hadir');
+            if(isLocked) {
+                lockedCount = parseInt(display.innerText);
+                btn.innerHTML = "🔓 BUKA KUNCI (EDIT DATA)";
+                btn.style.background = "var(--warning)";
+                document.getElementById('lock-icon').style.display = "inline";
+                display.classList.add('locked-val');
+            } else {
+                btn.innerHTML = "🔒 KUNCI JUMLAH HADIR";
+                btn.style.background = "var(--primary)";
+                document.getElementById('lock-icon').style.display = "none";
+                display.classList.remove('locked-val');
+            }
+            calculateReport();
+        }
+
+        function calculateReport() {
+            if (isLocked) return;
+            const total = parseInt(document.getElementById('in-total').value) || 0;
+            const pppk = parseInt(document.getElementById('in-pppk').value) || 0;
+            const cuti = parseInt(document.getElementById('in-cuti').value) || 0;
+            const izin = parseInt(document.getElementById('in-izin').value) || 0;
+            const sakit = parseInt(document.getElementById('in-sakit').value) || 0;
+            const tugas = parseInt(document.getElementById('in-tugas').value) || 0;
+            const belajar = parseInt(document.getElementById('in-belajar').value) || 0;
+            const manualIn = document.getElementById('in-manual-hadir').value;
+            
+            let hadirFisik = (manualIn !== "" && !isNaN(manualIn)) ? parseInt(manualIn) : aiDetectionCount + 1;
+
+            document.getElementById('out-hadir').innerText = hadirFisik;
+            document.getElementById('out-total').innerText = total;
+            document.getElementById('out-pppk').innerText = pppk;
+            document.getElementById('out-cuti').innerText = cuti;
+            document.getElementById('out-izin').innerText = izin;
+            document.getElementById('out-sakit').innerText = sakit;
+            document.getElementById('out-tugas').innerText = tugas;
+            document.getElementById('out-belajar').innerText = belajar;
+
+            let alpa = total - (hadirFisik + pppk + cuti + izin + sakit + tugas + belajar);
+            document.getElementById('out-alpa').innerText = alpa < 0 ? 0 : alpa;
+
+            const totalHadirAdministrasi = hadirFisik + pppk + cuti + izin + sakit + tugas + belajar;
+            const perc = total > 0 ? Math.round((totalHadirAdministrasi / total) * 100) : 0;
+            document.getElementById('perc-display').innerText = (perc > 100 ? 100 : perc) + "%";
+        }
+
+        async function takeSnapshot() {
+            isFrozen = true;
+            captureBtn.style.display = 'none';
+            btnRetake.style.display = 'block';
+        }
+
+        function retakePhoto() {
+            isFrozen = false;
+            captureBtn.style.display = 'block';
+            btnRetake.style.display = 'none';
+            updateSnapshot();
+        }
+
+        async function applyZoom() {
+            if (!currentStream) return;
+            const track = currentStream.getVideoTracks();
+            const zoomVal = document.getElementById('zoom-range').value;
+            try { 
+                await track.applyConstraints({ advanced: [{ zoom: parseFloat(zoomVal) }] }); 
+            } catch (e) { 
+                video.style.transform = (useFrontCamera ? "scaleX(-1) " : "") + `scale(${zoomVal})`; 
+            }
+        }
+
+        async function startApp() {
+            try {
+                await faceapi.nets.ssdMobilenetv1.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
+                detectorOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.25 });
+                initCamera();
+                initGPS();
+                setInterval(() => {
+                    const n = new Date();
+                    document.getElementById('wm-time').innerText = n.toLocaleTimeString('id-ID');
+                    document.getElementById('wm-date').innerText = n.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+                }, 1000);
+            } catch (err) { alert("AI/Koneksi Bermasalah."); }
+        }
+
+        async function initCamera() {
+            if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+            const constraints = { video: { facingMode: useFrontCamera ? "user" : "environment", width: { ideal: 1280 } } };
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+                video.onplay = () => {
+                    const overlay = document.getElementById('overlay');
+                    const displaySize = { width: video.clientWidth, height: video.clientHeight };
+                    faceapi.matchDimensions(overlay, displaySize);
+                    snapCanvas.width = video.videoWidth;
+                    snapCanvas.height = video.videoHeight;
+                    updateSnapshot();
+                };
+            } catch (e) { alert("Akses Kamera Ditolak!"); }
+        }
+
+        async function updateSnapshot() {
+            if(video.paused || video.ended || isFrozen) return;
+
+            const ctxSnap = snapCanvas.getContext('2d');
+            if(useFrontCamera) {
+                ctxSnap.save();
+                ctxSnap.translate(snapCanvas.width, 0);
+                ctxSnap.scale(-1, 1);
+            }
+            ctxSnap.drawImage(video, 0, 0, snapCanvas.width, snapCanvas.height);
+            if(useFrontCamera) ctxSnap.restore();
+
+            const detections = await faceapi.detectAllFaces(video, detectorOptions);
+            aiDetectionCount = detections.length;
+            calculateReport();
+            
+            const overlay = document.getElementById('overlay');
+            const displaySize = { width: video.clientWidth, height: video.clientHeight };
+            const ctxOverlay = overlay.getContext('2d');
+            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+            faceapi.draw.drawDetections(overlay, faceapi.resizeResults(detections, displaySize));
+            
+            setTimeout(updateSnapshot, 500); 
+        }
+
+        function toggleCamera() { 
+            useFrontCamera = !useFrontCamera; 
+            video.classList.toggle('mirror'); 
+            isFrozen = false; 
+            captureBtn.style.display = 'block';
+            btnRetake.style.display = 'none';
+            initCamera(); 
+        }
+
+        let lastPos = null;
+        function initGPS() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition(pos => {
+                    lastPos = pos;
+                    updateGPSUI();
+                }, null, { enableHighAccuracy: true });
+            }
+        }
+
+        function updateGPSUI() {
+            if (!lastPos) return;
+            const dist = calculateDistance(lastPos.coords.latitude, lastPos.coords.longitude, OFFICE_LAT, OFFICE_LNG);
+            document.getElementById('location-text').innerText = `${lastPos.coords.latitude.toFixed(6)}, ${lastPos.coords.longitude.toFixed(6)}`;
+            document.getElementById('distance-info').innerText = Math.round(dist) + "m";
+            const inside = dist <= ALLOWED_DISTANCE;
+            btnSave.disabled = !inside;
+            btnSave.innerText = inside ? "💾 SIMPAN LAPORAN (JPG)" : `DI LUAR RADIUS (${Math.round(dist)}m)`;
+            document.getElementById('zone-status').innerText = inside ? "DALAM AREA" : "DI LUAR AREA";
+            document.getElementById('zone-status').className = "status-badge " + (inside ? "status-in" : "status-out");
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const dLat = (lat2-lat1) * Math.PI/180;
+            const dLon = (lon2-lon1) * Math.PI/180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        async function generateJPG() {
+            if(!isFrozen) {
+                alert("Silakan tekan tombol lingkaran putih untuk ambil foto dulu!");
+                return;
+            }
+            btnSave.innerText = "⏳ PROSES...";
+            const ui = document.querySelectorAll('.cam-ui');
+            ui.forEach(el => el.style.opacity = '0');
+            
+            try {
+                const canvas = await html2canvas(document.getElementById('report-area'), { 
+                    useCORS: true, scale: 2, backgroundColor: "#ffffff"
+                });
+                const link = document.createElement('a');
+                link.download = `APEL_SBB_${Date.now()}.jpg`;
+                link.href = canvas.toDataURL('image/jpeg', 0.9);
+                link.click();
+            } catch (e) { alert("Gagal!"); }
+            finally {
+                ui.forEach(el => el.style.opacity = '1');
+                btnSave.innerText = "💾 SIMPAN LAPORAN (JPG)";
+            }
+        }
+    </script>
+</body>
+</html>
